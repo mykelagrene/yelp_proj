@@ -1,0 +1,112 @@
+To Write a Useful Yelp Review in Charlotte, NC, Say “Cheese”. Or Write a Longer Review.
+========================================================
+author: Michael Green
+date: November 20, 2015
+
+Introduction
+========================================================
+47% of Yelp reviews from Yelp Dataset Challenge #6 have at least one vote for "useful".
+
+- Can Topic Modeling reveal themes or words in review text that makes reviews useful? 
+- Use data from Charlotte, NC to reduce data set and account for regional preferences.
+- Conclusion: Topic Modeling doesn't provide insights desired, however the document term matrices produced suggest more words and more variety of words used in useful reviews.
+- R code I created to explore this data and create this report can be found at my [github page](https://github.com/mykelagrene/yelp_proj).
+
+Methods
+========================================================
+- Created dataframes and merged review data with business data from the json files provided.
+- Selected reviews for Charlotte business using geographic latitude and longitude coordinates.
+- Separated Charlotte reviews into useful and not-useful datasets. Took 2000 samples from each to create models.
+- Distribution of star ratings and business categories similar.
+- Created a document corpus and a document term matrix for each sample set using tm package in R.
+- Used topicmodels package in R to create models. Used the Latent Dirichlet Allocation with k=20 topics.
+- Experimented with restricting vocabulary in document term matrices using term frequency - inverse document frequency.
+
+Results
+========================================================
+Top Topic: Useful Reviews
+```{r, echo = FALSE}
+uTerms <- read.csv("useful_topics.csv")
+uTerms[18]
+
+```
+***
+Top Topic: Not Useful Reviews
+```{r, echo = FALSE}
+nTerms <- read.csv("not_useful_topics.csv")
+nTerms[18]
+```
+
+
+Discussion
+=========================================================
+- Topics reflected business categories: mostly restaurant and food related.
+- Not as useful as hoped to differentiate useful vs. not-useful.
+- Examination of document term matrices reveal differences in number of words used. Useful reviews have almost twice as many words on average.
+ 
+ 
+```{r, echo = FALSE, message = FALSE, fig.width=10, fig.height=4}
+#read Charlotte review csv into dataframe
+review.C <- read.csv("review_C.csv")
+
+#split reviews marked useful and not useful
+useful <- review.C[review.C$votes.useful > 0, ]
+not.useful <- review.C[review.C$votes.useful == 0, ]
+
+##preparing for topic modeling useful reviews
+library(tm)
+library(topicmodels)
+library(slam)
+
+#sample dataframe for modeling
+set.seed(4321)
+N <- 2000
+usamp <- useful[sample(nrow(useful),N),]
+
+#transfer text data to a corpus
+corpus1 <- Corpus(VectorSource(usamp$text))
+
+#create a document term matrix
+usamp_dtm <- DocumentTermMatrix(corpus1, control = 
+                                        list(weighting = weightTf, stopwords = TRUE,
+                                             wordLengths = c(5,Inf), removeNumbers = TRUE,
+                                             removePunctuation = TRUE))
+#remove rows with no valid terms
+usamp_dtm <- usamp_dtm[row_sums(usamp_dtm) > 0,]
+
+
+##topic modeling not useful reviews
+
+#sample dataframe for testing
+set.seed(1234)
+nsamp <- not.useful[sample(nrow(not.useful),N),]
+
+#transfer text data to a corpus
+corpus2 <- Corpus(VectorSource(nsamp$text))
+
+#create a document term matrix
+nsamp_dtm <- DocumentTermMatrix(corpus2, control = 
+                                        list(weighting = weightTf, stopwords = TRUE,
+                                             wordLengths = c(5,Inf), removeNumbers = TRUE,
+                                             removePunctuation = TRUE))
+#remove rows with no vaild terms
+nsamp_dtm <- nsamp_dtm[row_sums(nsamp_dtm) > 0,]
+
+#finding word counts in document term matrix:
+usamp_dtm2 <- as.matrix(usamp_dtm)
+ufrequency <- colSums(usamp_dtm2)
+ufrequency <- sort(ufrequency, decreasing=TRUE)
+
+nsamp_dtm2 <- as.matrix(nsamp_dtm)
+nfrequency <- colSums(nsamp_dtm2)
+nfrequency <- sort(nfrequency, decreasing=TRUE)
+
+#show stats for how many useful words
+uwordcount <- rowSums(usamp_dtm2)
+nwordcount <- rowSums(nsamp_dtm2)
+
+old.par <- par(mfrow=c(1, 2))
+hist(uwordcount, main = "Histogram:\nWords per Useful Review", xlab = "Word Count", cex.main=0.75)
+hist(nwordcount, main = "Histogram:\nWords per Not-Useful Review", xlab = "Word Count", cex.main=0.75)
+par(old.par)
+```

@@ -1,0 +1,180 @@
+---
+title: "To Write a Useful Yelp Review in Charlotte, NC, Say “Cheese”. Or Write a Longer Review."
+author: "Michael Green"
+date: "November 20, 2015"
+output: pdf_document
+---
+
+## Introduction
+
+47% of the Yelp reviews in the data set provided in Yelp Dataset Challenge Number 6 have at least one vote for “useful”. I wanted to use topic modeling to determine if content or words used in the text of the reviews could help determine what makes a review useful. To reduce the dataset to a more manageable size, and to account for differences in regional preferences, I chose to use reviews written only for businesses in the Charlotte, NC area. The results of this exploration, documented below, show that topic modeling and many other statistics show very little difference between the useful and not-useful reviews. However, examination of the document term matrices created to perform topic modeling show that there are differences in the variety of words and average numbers of words in a review that may correlate to usefulness. In addition, the word “cheese” occurs 416 times in a sample of 2000 useful reviews and only 197 times in 2000 reviews that were not marked useful.
+
+## Methods
+
+The data set used for this paper can be downloaded [here](  https://d396qusza40orc.cloudfront.net/dsscapstone/dataset/yelp_dataset_challenge_academic_dataset.zip). The R code I created to explore this data and create this report can be found at my [github page](https://github.com/mykelagrene/yelp_proj).
+
+There are several files in the yelp data set. I used the yelp_academic_dataset_business.json file and the yelp_academic_dataset_reviews.json file. In order to select review data from Charlotte, NC, I merged latitude and longitude values from the business data with the review data using business id from the review data to identify the correct values. Then I selected data from Charlotte (35.2269° N, 80.8433° W) by choosing all records with latitudes between 34° and 35° and longitudes between -82° and -90°.
+
+I then separated the Charlotte data into useful and non-useful reviews. Exploring the useful and non-useful review sets revealed little difference in the distribution of star ratings. Also, when merging business category information into the review datasets, the frequency distribution of categories was similar. Most reviews pertain to restaurants and food. The top 20 categories in each review set are shown below:
+
+```{r, echo = FALSE, fig.height=3}
+#read Charlotte review csv into dataframe
+review.C <- read.csv("review_C.csv")
+
+#split reviews marked useful and not useful
+useful <- review.C[review.C$votes.useful > 0, ]
+not.useful <- review.C[review.C$votes.useful == 0, ]
+
+#explore business categories
+business <- read.csv("business.csv")
+useful$business_cat <- business[match(useful$business_id, business$business_id), "categories"]
+useful$business_cat <- as.character(useful$business_cat)
+cat.sum.useful <- as.data.frame(table(unlist(strsplit(useful$business_cat, ', '))))
+names(cat.sum.useful) <- c("category", "count")
+cat.sum.useful <- cat.sum.useful[order(cat.sum.useful$count, decreasing = TRUE),]
+
+not.useful$business_cat <- business[match(not.useful$business_id, business$business_id), "categories"]
+not.useful$business_cat <- as.character(not.useful$business_cat)
+cat.sum.not.useful <- as.data.frame(table(unlist(strsplit(not.useful$business_cat, ', '))))
+names(cat.sum.not.useful) <- c("category", "count")
+cat.sum.not.useful <- cat.sum.not.useful[order(cat.sum.not.useful$count, decreasing = TRUE),]
+
+#create a panel plot comparing 2
+library(ggplot2)
+
+#top 20
+cat.sum.useful <- cat.sum.useful[1:20,]
+cat.sum.not.useful <- cat.sum.not.useful[1:20,]
+
+cat.sum.useful$category <-factor(cat.sum.useful$category,
+                           levels=cat.sum.useful[order(cat.sum.useful$count), "category"])
+x1 <- ggplot(data=cat.sum.useful, aes(x=category, y=count)) + 
+        geom_bar(stat="identity") +
+        ylim(0,40000) +
+        coord_flip() +
+        labs(x = "Business Category") +
+        labs(y = "Count of Useful Reviews") +
+        labs(title = "Top 20 Business Categories\nUseful Reviews") +
+        theme(axis.text=element_text(size=7))
+x1
+```
+
+```{r, echo = FALSE, fig.height=3}
+cat.sum.not.useful$category <-factor(cat.sum.not.useful$category,
+                                 levels=cat.sum.not.useful[order(cat.sum.not.useful$count),                                  "category"])
+x2 <- ggplot(data=cat.sum.not.useful, aes(x=category, y=count)) + 
+        geom_bar(stat="identity") +
+        ylim(0,40000) +
+        coord_flip() +
+        labs(x = "Business Category") +
+        labs(y = "Count of Not Useful Reviews") +
+        labs(title = "Top 20 Business Categories\nNot Useful Reviews") +
+        theme(axis.text=element_text(size=7))
+
+x2
+```
+
+No useful insight into what makes a review useful yet. Perhaps topic modeling will be illuminating.
+
+A topic model is a statistical model that helps to discover abstract topics in a body of documents by exploring relationships between the probability of occurrence of the different words in the documents. The output of a topic model is a pre-determined number of topics and the words that make up each topic, ranked by relevancy. A document may be described by one or more of the topics generated. More on topic modeling can be found [here](https://en.wikipedia.org/wiki/Topic_model). I used the topicmodels package in R to model the yelp review data. Documentation for this package is [here](https://cran.r-project.org/web/packages/topicmodels/index.html). I created two models, one for the useful reviews and one for the not-useful reviews.
+
+In order to create the topic models using the limited capacity of my eight year old laptop computer, I randomly sampled 2000 rows of data from each set of reviews. From each sample set, I created a text corpus and a document term matrix using the functions in the [tm package](https://cran.r-project.org/web/packages/tm/index.html) in R. I experimented quite a bit with the document term matrix, exploring ways to reduce the vocabulary sets and remove words common to most documents. One method of reducing the vocabulary is term frequency – inverse document frequency (tf-idf).  Tf-idf weights each term proportionally by the number of times it appears in a document offset by the frequency of the word in the entire document set, thus eliminating both frequently used words and seldom used words. However, when using this technique, many subjective words like awesome, amazing, love, delicious, etc,  were eliminated from the useful review set, and were not eliminated from the not-useful set where they do not occur in as large a proportion. I initially came to the conclusion that useful reviews were more objective because the models I generated did not have these subjective words in them. This report was originally going to be titled “Objective Reviews More Useful”. However after some checking, I realized my mistake. The opposite may actually be true. Finally, I settled on increasing the minimum word length to include in the modeling at 5 letters. This removed words like food, good, place, and nice, which were  very common in both sets and appeared in almost every resulting topic.
+
+The key parameter to choose in topic modeling is k, where k is the number of topics to model. Choosing k topics can be attempted objectively, using model fit parameters such as perplexity, or more subjectively by simply examining the terms in the topics the model produces to see if they make thematic sense. I wrote a script that computed perplexity, or the degree in which data fits the model, for k = 10,20,30,40,60, 80, and 100. The results suggested k = 60 would minimize the perplexity. However, an increase in k resulted in a significant increase in compute time for the topic model. A more subjective review of the results did not reveal any significant topical insight to be gained with higher k. A previous yelp challenge winner had used k = 20 in creating topic models from review text. See [here]( http://www.yelp.com/html/pdf/YelpDatasetChallengeWinner_PersonalizingRatings.pdf ). So I ultimately did the same.
+
+The topic model algorithm I chose to use was the Latent Dirichlet Allocation (LDA) model. The LDA model produces topics for which each document is a mixture of those topics. It is described [here](https://en.wikipedia.org/wiki/Latent_Dirichlet_allocation). I also explored using the correlated topics model (CTM) function in the R topicmodels package. The CTM took about twice as long to compute on my laptop and had larger perplexity.
+
+## Results
+
+The topics and the ten most relevant words for each are presented in the tables below. The topics seem to follow what can be expected from the distribution of business categories explored above. They are mostly food and restaurant related. The topics seem mostly positive, as there are a lot of “great” and “place” in both sets. Topics 17 and 14 are the highest probability fit for the most useful reviews. They are the leading topic for 158 and 138 reviews, respectively, out of 2000. Topic 17 seems to be lunch related. Topic 14 has to do with good service. 
+
+\tiny
+
+```{r, echo = FALSE, results = "asis"}
+library(pander)
+uTerms <- read.csv("useful_topics.csv")
+pandoc.table(uTerms, caption = "Top Ten Words in Each Topic: Useful Reviews")
+
+```
+\newpage
+```{r, echo = FALSE, results = "asis"}
+nTerms <- read.csv("not_useful_topics.csv")
+pandoc.table(nTerms, caption = "Top Ten Words in Each Topic: Not Useful Reviews")
+```
+
+\normalsize
+Topics 17 (195) and 5 (181) are the highest probability fit for the not-useful reviews. Topic 5 of the not-useful documents is interesting because it seems to be negative, with words like never, manager, customer, service. Though writing about lunch and good service might improve your odds of writing a useful review, I was not able to find significant discriminating factors between useful review topics and not-useful review topics.
+
+## Discussion
+
+The results of the topic modeling itself did not produce the insight I had hoped into why some reviews are deemed useful while others are not. However, the exploration of the data, the creation of the document term matrices, and examination of the word counts and frequency counts do reveal some clues.
+
+```{r, echo = FALSE, message = FALSE, fig.height=3}
+##preparing for topic modeling useful reviews
+library(tm)
+library(topicmodels)
+library(slam)
+
+#sample dataframe for modeling
+set.seed(4321)
+N <- 2000
+usamp <- useful[sample(nrow(useful),N),]
+
+#transfer text data to a corpus
+corpus1 <- Corpus(VectorSource(usamp$text))
+
+#create a document term matrix
+usamp_dtm <- DocumentTermMatrix(corpus1, control = 
+                                        list(weighting = weightTf, stopwords = TRUE,
+                                             wordLengths = c(5,Inf), removeNumbers = TRUE,
+                                             removePunctuation = TRUE))
+#remove rows with no valid terms
+usamp_dtm <- usamp_dtm[row_sums(usamp_dtm) > 0,]
+
+
+##topic modeling not useful reviews
+
+#sample dataframe for testing
+set.seed(1234)
+nsamp <- not.useful[sample(nrow(not.useful),N),]
+
+#transfer text data to a corpus
+corpus2 <- Corpus(VectorSource(nsamp$text))
+
+#create a document term matrix
+nsamp_dtm <- DocumentTermMatrix(corpus2, control = 
+                                        list(weighting = weightTf, stopwords = TRUE,
+                                             wordLengths = c(5,Inf), removeNumbers = TRUE,
+                                             removePunctuation = TRUE))
+#remove rows with no vaild terms
+nsamp_dtm <- nsamp_dtm[row_sums(nsamp_dtm) > 0,]
+
+#finding word counts in document term matrix:
+usamp_dtm2 <- as.matrix(usamp_dtm)
+ufrequency <- colSums(usamp_dtm2)
+ufrequency <- sort(ufrequency, decreasing=TRUE)
+
+nsamp_dtm2 <- as.matrix(nsamp_dtm)
+nfrequency <- colSums(nsamp_dtm2)
+nfrequency <- sort(nfrequency, decreasing=TRUE)
+
+old.par <- par(mfrow=c(1, 2))
+barplot(ufrequency[1:20], las=2, main = "Top 20 Word Counts, Useful Reviews", cex.lab=0.5, cex.names=0.5, cex.main=0.5)
+barplot(nfrequency[1:20], las=2, main = "Top 20 Word Counts, Not-Useful Reviews", cex.lab=0.5, cex.names=0.5, cex.main=0.5)
+par(old.par)
+```
+
+The top 20 most frequent words five letters and longer are about the same in each review set. One difference is “cheese” appears in 12th place in the useful review set. Another is that the terms "staff" and "never" are not among the top 20 in the useful review set. But a more macroscopic examination shows top word counts are higher in the useful review set. Morover, not only are the top words used more, 13508 words five letters and longer appear in the useful document term matrix. Only 9364 words appear in the not useful matrix, a 44% bigger vocabulary in the useful review corpus from the same sample size of reviews. This disparity in word count is also seen in the summary of the count of words five letters or longer per review. 
+
+```{r, echo = FALSE, fig.height=3}
+#show stats for how many useful words
+uwordcount <- rowSums(usamp_dtm2)
+nwordcount <- rowSums(nsamp_dtm2)
+
+old.par <- par(mfrow=c(1, 2))
+hist(uwordcount, main = "Histogram:\nWords per Useful Review", xlab = "Word Count", cex.main=0.75)
+hist(nwordcount, main = "Histogram:\nWords per Not-Useful Review", xlab = "Word Count", cex.main=0.75)
+par(old.par)
+```
+
+Useful reviews have a median of 43 words and average of 52 words per review. Not useful reviews have only a median of 22 and a mean of 31 words five letters or longer. The median and mean word counts are almost double in the useful reviews. Therefore we can conclude that a greater variety of longer words and longer review text correlate to useful yelp reviews in Charlotte, NC.
